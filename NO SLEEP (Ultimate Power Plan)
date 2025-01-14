@@ -4,19 +4,11 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Break
 }
 
-# Try to install Ultimate Performance plan first
-Write-Output "`n[Step 1] Adding Ultimate Performance power plan..."
-$result = powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61
-if ($result -match "GUID: (.*)") {
-    Write-Output "Successfully added Ultimate Performance plan"
-} else {
-    Write-Output "Ultimate Performance plan already exists or couldn't be added"
-}
-
-# Get all power plans
-Write-Output "`n[Step 2] Available Power Plans:"
+# First try to get all existing power schemes
+Write-Output "Getting all available power plans..."
 $plans = @()
-$powerCfgOutput = powercfg /list
+# Use /L instead of /list to show hidden power plans
+$powerCfgOutput = powercfg /L
 $planRegex = "Power Scheme GUID: (.*) \((.*)\)"
 $powerCfgOutput -split "`n" | ForEach-Object {
     if ($_ -match $planRegex) {
@@ -29,7 +21,8 @@ $powerCfgOutput -split "`n" | ForEach-Object {
     }
 }
 
-# Show available plans
+# Show all available plans
+Write-Output "`nAvailable Power Plans:"
 for ($i = 0; $i -lt $plans.Count; $i++) {
     Write-Output "[$i] $($plans[$i].Name)"
 }
@@ -56,7 +49,7 @@ function Get-PowerChoice {
     return $response -eq 'y'
 }
 
-Write-Output "`n[Step 3] Configure Power Settings:"
+Write-Output "`n[Step 2] Configure Power Settings:"
 
 # Monitor timeout
 if (Get-PowerChoice "monitor timeout" "Plugged In") { powercfg /change monitor-timeout-ac 0 }
