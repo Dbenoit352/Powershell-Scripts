@@ -233,7 +233,7 @@ try {
             <td>$($ipv4.PrefixLength)</td>
             <td>$($ipConfig.IPv4DefaultGateway.NextHop)</td>
             <td>$dnsServers</td>
-            <td>$([math]::Round($adapter.LinkSpeed/1000000, 2)) Mbps</td>
+            <td>$($adapter.LinkSpeed)</td>
         </tr>
 "@ | Add-Content $outputFile
     }
