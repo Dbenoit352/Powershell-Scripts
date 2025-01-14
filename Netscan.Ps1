@@ -10,6 +10,18 @@ function Format-TimeStamp {
     return "Never"
 }
 
+# Function to format bytes to readable size
+function Format-ByteSize {
+    param([int64]$Bytes)
+    $sizes = 'Bytes', 'KB', 'MB', 'GB', 'TB'
+    $order = 0
+    while ($Bytes -ge 1024 -and $order -lt $sizes.Count - 1) {
+        $order++
+        $Bytes = $Bytes/1024
+    }
+    return "{0:N2} {1}" -f $Bytes, $sizes[$order]
+}
+
 # Create the HTML file with header including dark mode button
 @"
 <!DOCTYPE html>
@@ -221,8 +233,8 @@ try {
 
     $adapters = Get-NetAdapter | Where-Object { $_.Status -eq "Up" }
     foreach ($adapter in $adapters) {
-        $ipConfig = Get-NetIPConfiguration -InterfaceIndex $adapter.ifIndex
-        $ipv4 = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4
+        $ipConfig = Get-NetIPConfiguration -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue
+        $ipv4 = Get-NetIPAddress -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
         $dnsServers = ($ipConfig.DNSServer | Where-Object { $_.AddressFamily -eq 2 }).ServerAddresses -join ", "
         
         @"
@@ -254,16 +266,22 @@ try {
 "@ | Add-Content $outputFile
 
     foreach ($adapter in $adapters) {
-        $stats = $adapter | Get-NetAdapterStatistics
-        @"
-        <tr>
-            <td>$($adapter.Name)</td>
-            <td>$([math]::Round($stats.ReceivedBytes/1MB, 2)) MB</td>
-            <td>$([math]::Round($stats.SentBytes/1MB, 2)) MB</td>
-            <td>$($stats.ReceivedErrors)</td>
-            <td>$($stats.OutboundErrors)</td>
-        </tr>
+        try {
+            $stats = $adapter | Get-NetAdapterStatistics -ErrorAction SilentlyContinue
+            if ($stats) {
+                @"
+                <tr>
+                    <td>$($adapter.Name)</td>
+                    <td>$(Format-ByteSize $stats.ReceivedBytes)</td>
+                    <td>$(Format-ByteSize $stats.SentBytes)</td>
+                    <td>$($stats.ReceivedErrors)</td>
+                    <td>$($stats.OutboundErrors)</td>
+                </tr>
 "@ | Add-Content $outputFile
+            }
+        } catch {
+            Write-Warning "Could not get statistics for adapter $($adapter.Name): $_"
+        }
     }
 
     @"
@@ -293,19 +311,25 @@ try {
                     </tr>
 "@ | Add-Content $outputFile
 
-    $printers = Get-Printer
-    foreach ($printer in $printers) {
-        $driver = Get-PrinterDriver -Name $printer.DriverName -ErrorAction SilentlyContinue
+    $printers = Get-Printer -ErrorAction SilentlyContinue
+    if ($printers) {
+        foreach ($printer in $printers) {
+            $driver = Get-PrinterDriver -Name $printer.DriverName -ErrorAction SilentlyContinue
+            @"
+            <tr>
+                <td>$($printer.Name)</td>
+                <td>$($printer.PrinterStatus)</td>
+                <td>$($printer.PortName)</td>
+                <td>$($printer.DriverName)</td>
+                <td>$($printer.Location)</td>
+                <td>$($printer.Shared)</td>
+                <td>$($printer.ShareName)</td>
+            </tr>
+"@ | Add-Content $outputFile
+        }
+    } else {
         @"
-        <tr>
-            <td>$($printer.Name)</td>
-            <td>$($printer.PrinterStatus)</td>
-            <td>$($printer.PortName)</td>
-            <td>$($printer.DriverName)</td>
-            <td>$($printer.Location)</td>
-            <td>$($printer.Shared)</td>
-            <td>$($printer.ShareName)</td>
-        </tr>
+            <tr><td colspan='7'>No printers found</td></tr>
 "@ | Add-Content $outputFile
     }
 
@@ -321,72 +345,21 @@ try {
                     </tr>
 "@ | Add-Content $outputFile
 
-    $ports = Get-PrinterPort
-    foreach ($port in $ports) {
+    $ports = Get-PrinterPort -ErrorAction SilentlyContinue
+    if ($ports) {
+        foreach ($port in $ports) {
+            @"
+            <tr>
+                <td>$($port.Name)</td>
+                <td>$($port.Description)</td>
+                <td>$($port.Type)</td>
+                <td>$($port.PrinterHostAddress)</td>
+            </tr>
+"@ | Add-Content $outputFile
+        }
+    } else {
         @"
-        <tr>
-            <td>$($port.Name)</td>
-            <td>$($port.Description)</td>
-            <td>$($port.Type)</td>
-            <td>$($port.PrinterHostAddress)</td>
-        </tr>
-"@ | Add-Content $outputFile
-    }
-
-    @"
-                </table>
-            </div>
-        </div>
-    </details>
-"@ | Add-Content $outputFile
-
-    # Network Shares Section
-    @"
-    <details>
-        <summary>Network Shares</summary>
-        <div>
-            <div>
-                <h3>Local Shares</h3>
-                <table>
-                    <tr>
-                        <th>Name</th>
-                        <th>Path</th>
-                        <th>Description</th>
-                        <th>Type</th>
-                    </tr>
-"@ | Add-Content $outputFile
-
-    $shares = Get-SmbShare
-    foreach ($share in $shares) {
-        @"
-        <tr>
-            <td>$($share.Name)</td>
-            <td>$($share.Path)</td>
-            <td>$($share.Description)</td>
-            <td>$($share.ShareType)</td>
-        </tr>
-"@ | Add-Content $outputFile
-    }
-
-    @"
-                </table>
-                <h3>Mapped Network Drives</h3>
-                <table>
-                    <tr>
-                        <th>Drive Letter</th>
-                        <th>Remote Path</th>
-                        <th>Status</th>
-                    </tr>
-"@ | Add-Content $outputFile
-
-    $mappedDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot }
-    foreach ($drive in $mappedDrives) {
-        @"
-        <tr>
-            <td>$($drive.Name):</td>
-            <td>$($drive.DisplayRoot)</td>
-            <td>$(if (Test-Path $drive.Root) { "Connected" } else { "Disconnected" })</td>
-        </tr>
+            <tr><td colspan='4'>No printer ports found</td></tr>
 "@ | Add-Content $outputFile
     }
 
@@ -416,4 +389,73 @@ try {
 # Open the report
 if (Test-Path $outputFile) {
     Invoke-Item $outputFile
-}
+} | Add-Content $outputFile
+
+    # Network Shares Section
+    @"
+    <details>
+        <summary>Network Shares</summary>
+        <div>
+            <div>
+                <h3>Local Shares</h3>
+                <table>
+                    <tr>
+                        <th>Name</th>
+                        <th>Path</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                    </tr>
+"@ | Add-Content $outputFile
+
+    $shares = Get-SmbShare -ErrorAction SilentlyContinue
+    if ($shares) {
+        foreach ($share in $shares) {
+            @"
+            <tr>
+                <td>$($share.Name)</td>
+                <td>$($share.Path)</td>
+                <td>$($share.Description)</td>
+                <td>$($share.ShareType)</td>
+            </tr>
+"@ | Add-Content $outputFile
+        }
+    } else {
+        @"
+            <tr><td colspan='4'>No shares found</td></tr>
+"@ | Add-Content $outputFile
+    }
+
+    @"
+                </table>
+                <h3>Mapped Network Drives</h3>
+                <table>
+                    <tr>
+                        <th>Drive Letter</th>
+                        <th>Remote Path</th>
+                        <th>Status</th>
+                    </tr>
+"@ | Add-Content $outputFile
+
+    $mappedDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.DisplayRoot }
+    if ($mappedDrives) {
+        foreach ($drive in $mappedDrives) {
+            @"
+            <tr>
+                <td>$($drive.Name):</td>
+                <td>$($drive.DisplayRoot)</td>
+                <td>$(if (Test-Path $drive.Root) { "Connected" } else { "Disconnected" })</td>
+            </tr>
+"@ | Add-Content $outputFile
+        }
+    } else {
+        @"
+            <tr><td colspan='3'>No mapped network drives found</td></tr>
+"@ | Add-Content $outputFile
+    }
+
+    @"
+                </table>
+            </div>
+        </div>
+    </details>
+"@
