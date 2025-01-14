@@ -31,7 +31,7 @@ $powerCfgOutput -split "`n" | ForEach-Object {
 
 # Show available plans
 for ($i = 0; $i -lt $plans.Count; $i++) {
-    Write-Output "[$i] $($plans[$i].Name) (GUID: $($plans[$i].GUID))"
+    Write-Output "[$i] $($plans[$i].Name)"
 }
 
 # Get user choice for power plan
@@ -44,47 +44,37 @@ $selectedPlan = $plans[[int]$choice]
 Write-Output "`nSetting power plan to: $($selectedPlan.Name)"
 powercfg /setactive $selectedPlan.GUID
 
-# Function to get user input for timeout value
-function Get-TimeoutChoice {
+# Function to ask about power settings
+function Get-PowerChoice {
     param (
-        [string]$settingName,
-        [string]$powerState
+        [string]$setting,
+        [string]$state
     )
     do {
-        Write-Output "`nSet $settingName timeout for $powerState"
-        Write-Output "0 = Never, or enter minutes (5-999)"
-        $value = Read-Host "Enter value"
-    } while ($value -notmatch '^\d+$' -or [int]$value -lt 0 -or ([int]$value -gt 0 -and [int]$value -lt 5) -or [int]$value -gt 999)
-    return $value
+        $response = Read-Host "Disable $setting ($state)? (y/n)"
+    } while ($response -notmatch '^[yn]$')
+    return $response -eq 'y'
 }
 
 Write-Output "`n[Step 3] Configure Power Settings:"
 
-# Monitor settings
-$monitorAC = Get-TimeoutChoice "monitor" "Plugged In"
-$monitorDC = Get-TimeoutChoice "monitor" "On Battery"
-powercfg /change monitor-timeout-ac $monitorAC
-powercfg /change monitor-timeout-dc $monitorDC
+# Monitor timeout
+if (Get-PowerChoice "monitor timeout" "Plugged In") { powercfg /change monitor-timeout-ac 0 }
+if (Get-PowerChoice "monitor timeout" "On Battery") { powercfg /change monitor-timeout-dc 0 }
 
-# Hard disk settings
-$diskAC = Get-TimeoutChoice "hard disk" "Plugged In"
-$diskDC = Get-TimeoutChoice "hard disk" "On Battery"
-powercfg /change disk-timeout-ac $diskAC
-powercfg /change disk-timeout-dc $diskDC
+# Disk timeout
+if (Get-PowerChoice "disk timeout" "Plugged In") { powercfg /change disk-timeout-ac 0 }
+if (Get-PowerChoice "disk timeout" "On Battery") { powercfg /change disk-timeout-dc 0 }
 
-# Sleep settings
-$sleepAC = Get-TimeoutChoice "sleep" "Plugged In"
-$sleepDC = Get-TimeoutChoice "sleep" "On Battery"
-powercfg /change standby-timeout-ac $sleepAC
-powercfg /change standby-timeout-dc $sleepDC
+# Sleep timeout
+if (Get-PowerChoice "sleep timeout" "Plugged In") { powercfg /change standby-timeout-ac 0 }
+if (Get-PowerChoice "sleep timeout" "On Battery") { powercfg /change standby-timeout-dc 0 }
 
-# Hibernate settings
-$hibernateAC = Get-TimeoutChoice "hibernate" "Plugged In"
-$hibernateDC = Get-TimeoutChoice "hibernate" "On Battery"
-powercfg /change hibernate-timeout-ac $hibernateAC
-powercfg /change hibernate-timeout-dc $hibernateDC
+# Hibernate timeout
+if (Get-PowerChoice "hibernate timeout" "Plugged In") { powercfg /change hibernate-timeout-ac 0 }
+if (Get-PowerChoice "hibernate timeout" "On Battery") { powercfg /change hibernate-timeout-dc 0 }
 
-# Lid close action (if laptop)
+# Lid settings for laptops
 $isLaptop = (Get-WmiObject -Class Win32_ComputerSystem).PCSystemType -eq 2
 if ($isLaptop) {
     Write-Output "`nLid Close Action Options:"
@@ -96,26 +86,16 @@ if ($isLaptop) {
     do {
         $lidAC = Read-Host "Select lid close action when Plugged In (0-3)"
     } while ($lidAC -notmatch '^[0-3]$')
+    powercfg /setacvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidAC
     
     do {
         $lidDC = Read-Host "Select lid close action when On Battery (0-3)"
     } while ($lidDC -notmatch '^[0-3]$')
-    
-    powercfg /setacvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidAC
     powercfg /setdcvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidDC
 }
 
 # Apply all changes
 powercfg /setactive $selectedPlan.GUID
 
-Write-Output "`nCurrent power configuration:"
-powercfg /getactivescheme
-
 Write-Output "`nPower settings configured successfully!"
-Write-Output "Monitor Timeout: Plugged In=$monitorAC min, Battery=$monitorDC min"
-Write-Output "Hard Disk Timeout: Plugged In=$diskAC min, Battery=$diskDC min"
-Write-Output "Sleep Timeout: Plugged In=$sleepAC min, Battery=$sleepDC min"
-Write-Output "Hibernate Timeout: Plugged In=$hibernateAC min, Battery=$hibernateDC min"
-if ($isLaptop) {
-    Write-Output "Lid Close Action: Plugged In=$lidAC, Battery=$lidDC"
-}
+powercfg /getactivescheme
