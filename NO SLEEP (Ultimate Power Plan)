@@ -1,39 +1,121 @@
+# Check for Administrator privileges
 if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Warning "Please run this script as an Administrator!"
     Break
 }
 
-Write-Output "Enabling Ultimate Performance power plan..."
-$UltimatePlanGuid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-
-$ExistingPlan = powercfg -list | Select-String -Pattern $UltimatePlanGuid
-if (-not $ExistingPlan) {
-    powercfg -duplicatescheme $UltimatePlanGuid
-    Write-Output "Ultimate Performance plan added."
-    $Schemes = powercfg -list
-    if ($Schemes -match "Power Scheme GUID: (.*) \(Ultimate Performance\)") {
-        $UltimatePlanGuid = $matches[1].Trim()
-    }
+# Try to install Ultimate Performance plan first
+Write-Output "`n[Step 1] Adding Ultimate Performance power plan..."
+$result = powercfg /duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61
+if ($result -match "GUID: (.*)") {
+    Write-Output "Successfully added Ultimate Performance plan"
 } else {
-    Write-Output "Ultimate Performance plan already exists."
+    Write-Output "Ultimate Performance plan already exists or couldn't be added"
 }
 
-Write-Output "Switching to Ultimate Performance plan..."
-powercfg -setactive $UltimatePlanGuid
+# Get all power plans
+Write-Output "`n[Step 2] Available Power Plans:"
+$plans = @()
+$powerCfgOutput = powercfg /list
+$planRegex = "Power Scheme GUID: (.*) \((.*)\)"
+$powerCfgOutput -split "`n" | ForEach-Object {
+    if ($_ -match $planRegex) {
+        $guid = $matches[1].Trim()
+        $name = $matches[2].Trim()
+        $plans += [PSCustomObject]@{
+            Name = $name
+            GUID = $guid
+        }
+    }
+}
 
-Write-Output "Disabling all sleep options..."
-powercfg -change monitor-timeout-ac 0
-powercfg -change monitor-timeout-dc 0
-powercfg -change disk-timeout-ac 0
-powercfg -change disk-timeout-dc 0
-powercfg -change standby-timeout-ac 0
-powercfg -change standby-timeout-dc 0
-powercfg -change hibernate-timeout-ac 0
-powercfg -change hibernate-timeout-dc 0
+# Show available plans
+for ($i = 0; $i -lt $plans.Count; $i++) {
+    Write-Output "[$i] $($plans[$i].Name) (GUID: $($plans[$i].GUID))"
+}
 
-powercfg -setacvalueindex $UltimatePlanGuid 238c9fa8-0aad-41ed-83f4-97be242c8f20 94ac6d29-73ce-41a6-809f-6363ba21b47e 0
-powercfg -setdcvalueindex $UltimatePlanGuid 238c9fa8-0aad-41ed-83f4-97be242c8f20 94ac6d29-73ce-41a6-809f-6363ba21b47e 0
-powercfg -setacvalueindex $UltimatePlanGuid 4f971e89-eebd-4455-a8de-9e59040e7347 96996bc0-ad50-47ec-923b-6f41874dd9eb 0
-powercfg -setdcvalueindex $UltimatePlanGuid 4f971e89-eebd-4455-a8de-9e59040e7347 96996bc0-ad50-47ec-923b-6f41874dd9eb 0
+# Get user choice for power plan
+do {
+    $choice = Read-Host "`nSelect power plan number (0-$($plans.Count - 1))"
+} while ($choice -notmatch '^\d+$' -or [int]$choice -lt 0 -or [int]$choice -ge $plans.Count)
 
-Write-Output "Ultimate Performance plan is now active, and sleep options are disabled."
+# Set selected power plan
+$selectedPlan = $plans[[int]$choice]
+Write-Output "`nSetting power plan to: $($selectedPlan.Name)"
+powercfg /setactive $selectedPlan.GUID
+
+# Function to get user input for timeout value
+function Get-TimeoutChoice {
+    param (
+        [string]$settingName,
+        [string]$powerState
+    )
+    do {
+        Write-Output "`nSet $settingName timeout for $powerState"
+        Write-Output "0 = Never, or enter minutes (5-999)"
+        $value = Read-Host "Enter value"
+    } while ($value -notmatch '^\d+$' -or [int]$value -lt 0 -or ([int]$value -gt 0 -and [int]$value -lt 5) -or [int]$value -gt 999)
+    return $value
+}
+
+Write-Output "`n[Step 3] Configure Power Settings:"
+
+# Monitor settings
+$monitorAC = Get-TimeoutChoice "monitor" "Plugged In"
+$monitorDC = Get-TimeoutChoice "monitor" "On Battery"
+powercfg /change monitor-timeout-ac $monitorAC
+powercfg /change monitor-timeout-dc $monitorDC
+
+# Hard disk settings
+$diskAC = Get-TimeoutChoice "hard disk" "Plugged In"
+$diskDC = Get-TimeoutChoice "hard disk" "On Battery"
+powercfg /change disk-timeout-ac $diskAC
+powercfg /change disk-timeout-dc $diskDC
+
+# Sleep settings
+$sleepAC = Get-TimeoutChoice "sleep" "Plugged In"
+$sleepDC = Get-TimeoutChoice "sleep" "On Battery"
+powercfg /change standby-timeout-ac $sleepAC
+powercfg /change standby-timeout-dc $sleepDC
+
+# Hibernate settings
+$hibernateAC = Get-TimeoutChoice "hibernate" "Plugged In"
+$hibernateDC = Get-TimeoutChoice "hibernate" "On Battery"
+powercfg /change hibernate-timeout-ac $hibernateAC
+powercfg /change hibernate-timeout-dc $hibernateDC
+
+# Lid close action (if laptop)
+$isLaptop = (Get-WmiObject -Class Win32_ComputerSystem).PCSystemType -eq 2
+if ($isLaptop) {
+    Write-Output "`nLid Close Action Options:"
+    Write-Output "0 = Do nothing"
+    Write-Output "1 = Sleep"
+    Write-Output "2 = Hibernate"
+    Write-Output "3 = Shut down"
+    
+    do {
+        $lidAC = Read-Host "Select lid close action when Plugged In (0-3)"
+    } while ($lidAC -notmatch '^[0-3]$')
+    
+    do {
+        $lidDC = Read-Host "Select lid close action when On Battery (0-3)"
+    } while ($lidDC -notmatch '^[0-3]$')
+    
+    powercfg /setacvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidAC
+    powercfg /setdcvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidDC
+}
+
+# Apply all changes
+powercfg /setactive $selectedPlan.GUID
+
+Write-Output "`nCurrent power configuration:"
+powercfg /getactivescheme
+
+Write-Output "`nPower settings configured successfully!"
+Write-Output "Monitor Timeout: Plugged In=$monitorAC min, Battery=$monitorDC min"
+Write-Output "Hard Disk Timeout: Plugged In=$diskAC min, Battery=$diskDC min"
+Write-Output "Sleep Timeout: Plugged In=$sleepAC min, Battery=$sleepDC min"
+Write-Output "Hibernate Timeout: Plugged In=$hibernateAC min, Battery=$hibernateDC min"
+if ($isLaptop) {
+    Write-Output "Lid Close Action: Plugged In=$lidAC, Battery=$lidDC"
+}
