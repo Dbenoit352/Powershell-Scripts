@@ -13,18 +13,22 @@ $isLaptop = $response -eq 'y'
 Write-Output "`nGetting available power plans..."
 
 # Define known power plan GUIDs and names based on system type
-$knownPlans = @{
-    "381b4222-f694-41f0-9685-ff5bb260df2e" = "Balanced"
-    "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" = "High Performance"
-}
+$knownPlans = @{}
 
 if ($isLaptop) {
-    # Add laptop-specific plans
-    $knownPlans.Add("245d8541-3943-4422-b025-13a784f679b7", "Best Power Efficiency")
-    $knownPlans.Add("1e329c3b-7f7c-42e7-a321-c324c4b7c2b8", "Best Performance")
+    # Laptop-specific plans
+    $knownPlans = @{
+        "381b4222-f694-41f0-9685-ff5bb260df2e" = "Balanced"
+        "245d8541-3943-4422-b025-13a784f679b7" = "Best Power Efficiency"
+        "1e329c3b-7f7c-42e7-a321-c324c4b7c2b8" = "Best Performance"
+    }
 } else {
-    # Add desktop-specific plans
-    $knownPlans.Add("e9a42b02-d5df-448d-aa00-03f14749eb61", "Ultimate Performance")
+    # Desktop plans
+    $knownPlans = @{
+        "381b4222-f694-41f0-9685-ff5bb260df2e" = "Balanced"
+        "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" = "High Performance"
+        "e9a42b02-d5df-448d-aa00-03f14749eb61" = "Ultimate Performance"
+    }
 }
 
 $plans = @()
