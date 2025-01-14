@@ -4,30 +4,45 @@ if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     Break
 }
 
-# First try to get all existing power schemes
+# Detect if system is a laptop
+$isLaptop = (Get-WmiObject -Class Win32_ComputerSystem).PCSystemType -eq 2
+
 Write-Output "Getting all available power plans..."
+
+# Define known power plan GUIDs and names
+$knownPlans = @{
+    # Default Windows plans
+    "381b4222-f694-41f0-9685-ff5bb260df2e" = "Balanced"
+    "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" = "High Performance"
+    "a1841308-3541-4fab-bc81-f71556f20b4a" = "Power Saver"
+    "e9a42b02-d5df-448d-aa00-03f14749eb61" = "Ultimate Performance"
+    # Laptop specific plans
+    "245d8541-3943-4422-b025-13a784f679b7" = "Best Power Efficiency"
+    "1e329c3b-7f7c-42e7-a321-c324c4b7c2b8" = "Best Performance"
+}
+
 $plans = @()
-# Use /L instead of /list to show hidden power plans
-$powerCfgOutput = powercfg /L
-$planRegex = "Power Scheme GUID: (.*) \((.*)\)"
-$powerCfgOutput -split "`n" | ForEach-Object {
-    if ($_ -match $planRegex) {
-        $guid = $matches[1].Trim()
-        $name = $matches[2].Trim()
+$index = 0
+
+Write-Output "`nAvailable Power Plans:"
+foreach ($plan in $knownPlans.GetEnumerator()) {
+    $result = powercfg /query $plan.Key 2>$null
+    if ($result -notmatch "does not exist") {
         $plans += [PSCustomObject]@{
-            Name = $name
-            GUID = $guid
+            Index = $index
+            Name = $plan.Value
+            GUID = $plan.Key
         }
+        Write-Output "[$index] $($plan.Value)"
+        $index++
     }
 }
 
-# Show all available plans
-Write-Output "`nAvailable Power Plans:"
-for ($i = 0; $i -lt $plans.Count; $i++) {
-    Write-Output "[$i] $($plans[$i].Name)"
-}
+# Get current active plan
+$currentPlan = powercfg /getactivescheme
+Write-Output "`nCurrent active plan: $currentPlan"
 
-# Get user choice for power plan
+# Get user choice
 do {
     $choice = Read-Host "`nSelect power plan number (0-$($plans.Count - 1))"
 } while ($choice -notmatch '^\d+$' -or [int]$choice -lt 0 -or [int]$choice -ge $plans.Count)
@@ -49,7 +64,7 @@ function Get-PowerChoice {
     return $response -eq 'y'
 }
 
-Write-Output "`n[Step 2] Configure Power Settings:"
+Write-Output "`nConfigure Power Settings:"
 
 # Monitor timeout
 if (Get-PowerChoice "monitor timeout" "Plugged In") { powercfg /change monitor-timeout-ac 0 }
@@ -67,8 +82,7 @@ if (Get-PowerChoice "sleep timeout" "On Battery") { powercfg /change standby-tim
 if (Get-PowerChoice "hibernate timeout" "Plugged In") { powercfg /change hibernate-timeout-ac 0 }
 if (Get-PowerChoice "hibernate timeout" "On Battery") { powercfg /change hibernate-timeout-dc 0 }
 
-# Lid settings for laptops
-$isLaptop = (Get-WmiObject -Class Win32_ComputerSystem).PCSystemType -eq 2
+# Lid settings if laptop
 if ($isLaptop) {
     Write-Output "`nLid Close Action Options:"
     Write-Output "0 = Do nothing"
@@ -79,16 +93,13 @@ if ($isLaptop) {
     do {
         $lidAC = Read-Host "Select lid close action when Plugged In (0-3)"
     } while ($lidAC -notmatch '^[0-3]$')
-    powercfg /setacvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidAC
+    powercfg /setacvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidAC
     
     do {
         $lidDC = Read-Host "Select lid close action when On Battery (0-3)"
     } while ($lidDC -notmatch '^[0-3]$')
-    powercfg /setdcvalueindex $selectedPlan.GUID 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidDC
+    powercfg /setdcvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 $lidDC
 }
 
-# Apply all changes
-powercfg /setactive $selectedPlan.GUID
-
-Write-Output "`nPower settings configured successfully!"
+Write-Output "`nFinal power configuration:"
 powercfg /getactivescheme
