@@ -13,8 +13,9 @@ choco install googlechrome -y --ignore-checksums --force
 # Wait for installation to complete
 Start-Sleep -Seconds 10
 
-# Open the Default Apps settings for the user to set Chrome as default
+# Open the Default Apps settings
 Write-Host "Opening Default Apps settings..."
 Start-Process "ms-settings:defaultapps"
 
-Write-Host "Please set Google Chrome as the default browser in the settings."
+# Additional instruction for the user
+Write-Host "Please scroll down to the 'Web browser' section and select Google Chrome as the default browser."
