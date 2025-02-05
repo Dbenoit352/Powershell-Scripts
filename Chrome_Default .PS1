@@ -13,21 +13,8 @@ choco install googlechrome -y --ignore-checksums --force
 # Wait for installation to complete
 Start-Sleep -Seconds 10
 
-# Create the default app association XML file
-$xmlPath = "$env:TEMP\chrome_association.xml"
-$xmlContent = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<DefaultAssociations>
-    <Association Identifier=".htm" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
-    <Association Identifier=".html" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
-    <Association Identifier="http" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
-    <Association Identifier="https" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
-</DefaultAssociations>
-"@
-$xmlContent | Set-Content -Path $xmlPath -Encoding UTF8
+# Open the Default Apps settings for the user to set Chrome as default
+Write-Host "Opening Default Apps settings..."
+Start-Process "ms-settings:defaultapps"
 
-# Apply the default app associations using DISM
-Write-Host "Setting Google Chrome as the default browser..."
-Start-Process -FilePath "dism.exe" -ArgumentList "/Online /Import-DefaultAppAssociations:$xmlPath" -Wait -NoNewWindow
-
-Write-Host "Google Chrome has been set as the default browser."
+Write-Host "Please set Google Chrome as the default browser in the settings."
