@@ -14,7 +14,7 @@ $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 Write-Host "Setting Google Chrome as the default application for various file types..."
 
-$fileTypes = @(".html", ".pdf", ".url")
+$fileTypes = @(".html",".url")
 
 foreach ($fileType in $fileTypes) {
     New-Item -Path "HKCU:\Software\Classes\$fileType" -Value "ChromeHTML" -Force
