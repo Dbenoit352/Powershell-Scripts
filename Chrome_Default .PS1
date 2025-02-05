@@ -1,4 +1,3 @@
-# Ensure Chocolatey is installed
 if (!(Test-Path "C:\ProgramData\chocolatey\choco.exe")) {
     Write-Host "Chocolatey is not installed. Installing now..."
     Set-ExecutionPolicy Bypass -Scope Process -Force
@@ -6,16 +5,20 @@ if (!(Test-Path "C:\ProgramData\chocolatey\choco.exe")) {
     Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 }
 
-# Install Google Chrome silently
 Write-Host "Installing Google Chrome..."
 choco install googlechrome -y --ignore-checksums --force
 
-# Wait for installation to complete
 Start-Sleep -Seconds 10
 
-# Open the Default Apps settings
-Write-Host "Opening Default Apps settings..."
-Start-Process "ms-settings:defaultapps"
+$chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 
-# Additional instruction for the user
-Write-Host "Please scroll down and click Google Chrome then at the top click set as default ."
+Write-Host "Setting Google Chrome as the default application for various file types..."
+
+$fileTypes = @(".html", ".pdf", ".url")
+
+foreach ($fileType in $fileTypes) {
+    New-Item -Path "HKCU:\Software\Classes\$fileType" -Value "ChromeHTML" -Force
+    New-Item -Path "HKCU:\Software\Classes\ChromeHTML\shell\open\command" -Value "`"$chromePath`" `"%1`"" -Force
+}
+
+Write-Host "Google Chrome has been set as the default application for .html, .pdf, and .url files."
