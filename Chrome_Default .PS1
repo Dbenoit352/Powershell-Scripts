@@ -18,4 +18,4 @@ Write-Host "Opening Default Apps settings..."
 Start-Process "ms-settings:defaultapps"
 
 # Additional instruction for the user
-Write-Host "Please scroll down to the 'Web browser' section and select Google Chrome as the default browser."
+Write-Host "Please scroll down and click Google Chrome then at the top click set as default ."
